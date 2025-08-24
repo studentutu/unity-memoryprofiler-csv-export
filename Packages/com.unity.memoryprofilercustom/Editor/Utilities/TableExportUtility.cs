@@ -40,15 +40,15 @@ namespace Unity.MemoryProfiler.Editor
                 TableExportUtility.ExportAllManagedObjectsToCsv(window.m_SnapshotDataService.Base);
         }
 
-        // [MenuItem("Window/Analysis/Memory Profiler/Export/Graphics (Estimated) to CSV", false, 101)]
-        // static void ExportGraphics()
-        // {
-        //      if (!ExportValidate())
-        //         return;
-        //     var window = EditorWindow.GetWindow<MemoryProfilerWindow>();
-        //     if (window.m_SnapshotDataService.Base != null)
-        //         TableExportUtility.ExportGraphicsToCsv(window.m_SnapshotDataService.Base);
-        // }
+        [MenuItem("Window/Analysis/Memory Profiler/Export/Graphics (Estimated) to CSV", false, 101)]
+        static void ExportGraphics()
+        {
+             if (!ExportValidate())
+                return;
+            var window = EditorWindow.GetWindow<MemoryProfilerWindow>();
+            if (window.m_SnapshotDataService.Base != null)
+                TableExportUtility.ExportGraphicsToCsv(window.m_SnapshotDataService.Base);
+        }
 
         [MenuItem("Window/Analysis/Memory Profiler/Export/Unity Objects to CSV", false, 102)]
         static void ExportUnityObjects()
@@ -110,25 +110,24 @@ namespace Unity.MemoryProfiler.Editor
             EditorUtility.RevealInFinder(path);
         }
         
-        // public static void ExportGraphicsToCsv(CachedSnapshot snapshot)
-        // {
-        //     var path = EditorUtility.SaveFilePanel("Export Graphics (Estimated) to CSV", "", "Graphics", "csv");
-        //     if (string.IsNullOrEmpty(path))
-        //         return;
+        public static void ExportGraphicsToCsv(CachedSnapshot snapshot)
+        {
+            var path = EditorUtility.SaveFilePanel("Export Graphics (Estimated) to CSV", "", "Graphics", "csv");
+            if (string.IsNullOrEmpty(path))
+                return;
 
-        //     var sb = new StringBuilder();
-        //     sb.AppendLine("Id,Owner,TotalSize");
+            var sb = new StringBuilder();
+            sb.AppendLine("NameOfObject,Type,Allocated(MB)");
 
-        //     for (int i = 0; i < snapshot.GfxResources.Count; ++i)
-        //     {
-        //         var id = snapshot.GfxResources.InstanceId[i];
-        //         var owner = snapshot.GetOwningObjectForGfxResource(i);
-        //         var size = snapshot.GfxResources.TotalSize[i];
-        //         sb.AppendLine($"{id},{owner},{size}");
-        //     }
+            // TODO: Fix export of graphics resources 
+            // make sure to order OrderByDescending by allocated size
+            // format bytes to MB before writing to csv
+            // Build the same data that drives  All of Memory table, then flatten it to actual objects.
+            
 
-        //     File.WriteAllText(path, sb.ToString());
-        // }
+            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+            EditorUtility.RevealInFinder(path);
+        }
 
         public static void ExportUnityObjectsToCsv(CachedSnapshot snapshot)
         {
