@@ -18,11 +18,11 @@ namespace Unity.MemoryProfiler.Editor
         {
             return bytes / (1024f * 1024f);
         }
-        
+
         static string FormatBytes(long bytes)
-        { 
+        {
             return $"{BytesToMegabytes(bytes):F3} MB";
-        } 
+        }
 
         static bool ExportValidate()
         {
@@ -30,6 +30,36 @@ namespace Unity.MemoryProfiler.Editor
             var window = EditorWindow.GetWindow<MemoryProfilerWindow>();
             return window != null && window.m_SnapshotDataService != null && window.m_SnapshotDataService.Base != null;
         }
+
+        [MenuItem("Window/Analysis/Memory Profiler Export/All to CSV", false, 100)]
+        static void ExportAllToCsv()
+        {
+            if (!ExportValidate())
+                return;
+
+            var window = EditorWindow.GetWindow<MemoryProfilerWindow>();
+            if (window.m_SnapshotDataService.Base == null)
+            {
+                // Handle the case where the snapshot is not available
+                EditorUtility.DisplayDialog("Error", "No snapshot available for export.", "OK");
+                return;
+
+            }
+            var mainFolderToExport = EditorUtility.SaveFolderPanel("Select Folder to Export", MemoryProfilerSettings.LastImportPath, "");
+            if (string.IsNullOrEmpty(mainFolderToExport))
+                return;
+
+            var summary = Path.Combine(mainFolderToExport, "Summary.csv");
+            var graphics = Path.Combine(mainFolderToExport, "Graphics.csv");
+            var unityObjects = Path.Combine(mainFolderToExport, "UnityObjects.csv");
+            var managedObjects = Path.Combine(mainFolderToExport, "AllManagedObjects.csv");
+
+            TableExportUtility.ExportSummaryToCsv(window.m_SnapshotDataService.Base, summary, false);
+            TableExportUtility.ExportGraphicsToCsv(window.m_SnapshotDataService.Base, graphics, false);
+            TableExportUtility.ExportUnityObjectsToCsv(window.m_SnapshotDataService.Base, unityObjects, false);
+            TableExportUtility.ExportAllManagedObjectsToCsv(window.m_SnapshotDataService.Base, managedObjects, true);
+        }
+
 
         [MenuItem("Window/Analysis/Memory Profiler Export/Managed Objects to CSV", false, 100)]
         static void ExportAllManagedObjects()
@@ -44,7 +74,7 @@ namespace Unity.MemoryProfiler.Editor
         [MenuItem("Window/Analysis/Memory Profiler Export/Graphics (Estimated) to CSV", false, 101)]
         static void ExportGraphics()
         {
-             if (!ExportValidate())
+            if (!ExportValidate())
                 return;
             var window = EditorWindow.GetWindow<MemoryProfilerWindow>();
             if (window.m_SnapshotDataService.Base != null)
@@ -54,17 +84,83 @@ namespace Unity.MemoryProfiler.Editor
         [MenuItem("Window/Analysis/Memory Profiler Export/Unity Objects to CSV", false, 102)]
         static void ExportUnityObjects()
         {
-             if (!ExportValidate())
+            if (!ExportValidate())
                 return;
             var window = EditorWindow.GetWindow<MemoryProfilerWindow>();
             if (window.m_SnapshotDataService.Base != null)
                 TableExportUtility.ExportUnityObjectsToCsv(window.m_SnapshotDataService.Base);
         }
 
-        public static void ExportAllManagedObjectsToCsv(CachedSnapshot snapshot)
+        [MenuItem("Window/Analysis/Memory Profiler Export/Summary to CSV", false, 100)]
+        static void ExportSummary()
+        {
+            if (!ExportValidate())
+                return;
+            var window = EditorWindow.GetWindow<MemoryProfilerWindow>();
+            if (window.m_SnapshotDataService.Base != null)
+                TableExportUtility.ExportSummaryToCsv(window.m_SnapshotDataService.Base);
+        }
+
+        public static void ExportSummaryToCsv(CachedSnapshot snapshot, string path = null, bool reveal = true)
         {
             // Ask for a destination path
-            var path = EditorUtility.SaveFilePanel("Export All Managed Objects to CSV", MemoryProfilerSettings.LastImportPath, "AllManagedObjects", "csv");
+            path ??= EditorUtility.SaveFilePanel("Export Summary to CSV", MemoryProfilerSettings.LastImportPath, "Summary", "csv");
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            // Build the same data models used by the Summary view
+            var allMemoryModel = new Unity.MemoryProfiler.Editor.UI.AllMemorySummaryModelBuilder(snapshot, null).Build();
+            var residentModel = new Unity.MemoryProfiler.Editor.UI.ResidentMemorySummaryModelBuilder(snapshot, null).Build();
+            var managedModel = new Unity.MemoryProfiler.Editor.UI.ManagedMemorySummaryModelBuilder(snapshot, null).Build();
+
+            var sb = new StringBuilder();
+
+            // Section: Total Resident Memory on Device
+            ulong totalResidentBytes = 0;
+            if (residentModel.Rows != null && residentModel.Rows.Count > 0)
+                totalResidentBytes = residentModel.Rows[0].BaseSize.Resident;
+
+            sb.AppendLine("Total Resident Memory on Device,Value");
+            sb.AppendLine($",{FormatBytes((long)totalResidentBytes)}");
+            sb.AppendLine();
+
+            // Section: Allocated Memory Breakdown (matches Summary 'All Memory' widget)
+            sb.AppendLine("Allocated Memory Breakdown");
+            sb.AppendLine("Category,Allocated(MB),Resident(MB)");
+
+            foreach (var row in allMemoryModel.Rows.OrderByDescending(r => r.BaseSize.Committed))
+            {
+                var safeName = (row.Name ?? string.Empty).Replace("\"", "\"\"");
+                var allocated = FormatBytes((long)row.BaseSize.Committed);
+                // For categories that don't have resident size in the Summary view (e.g., Graphics (Estimated), Untracked (Estimated)),
+                // leave the resident column empty to reflect unavailability.
+                var resident = row.ResidentSizeUnavailable ? string.Empty : FormatBytes((long)row.BaseSize.Resident);
+                sb.AppendLine($"\"{safeName}\",{allocated},{resident}");
+            }
+
+            sb.AppendLine();
+
+            // Section: Managed Memory Breakdown (matches Summary 'Managed Memory' widget)
+            sb.AppendLine("Managed Memory Breakdown");
+            sb.AppendLine("Category,Allocated(MB),Resident(MB)");
+
+            foreach (var row in managedModel.Rows.OrderByDescending(r => r.BaseSize.Committed))
+            {
+                var safeName = (row.Name ?? string.Empty).Replace("\"", "\"\"");
+                var allocated = FormatBytes((long)row.BaseSize.Committed);
+                var resident = FormatBytes((long)row.BaseSize.Resident);
+                sb.AppendLine($"\"{safeName}\",{allocated},{resident}");
+            }
+
+            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+            if (reveal)
+                EditorUtility.RevealInFinder(path);
+        }
+
+        public static void ExportAllManagedObjectsToCsv(CachedSnapshot snapshot, string path = null, bool reveal = true)
+        {
+            // Ask for a destination path
+            path ??= EditorUtility.SaveFilePanel("Export All Managed Objects to CSV", MemoryProfilerSettings.LastImportPath, "AllManagedObjects", "csv");
             if (string.IsNullOrEmpty(path))
                 return;
 
@@ -147,13 +243,15 @@ namespace Unity.MemoryProfiler.Editor
             }
 
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
-            EditorUtility.RevealInFinder(path);
+
+            if (reveal)
+                EditorUtility.RevealInFinder(path);
         }
-        
-        public static void ExportGraphicsToCsv(CachedSnapshot snapshot)
+
+        public static void ExportGraphicsToCsv(CachedSnapshot snapshot, string path = null, bool reveal = true)
         {
             // Use the last import path for consistency with other exports
-            var path = EditorUtility.SaveFilePanel("Export Graphics (Estimated) to CSV", MemoryProfilerSettings.LastImportPath, "Graphics", "csv");
+            path ??= EditorUtility.SaveFilePanel("Export Graphics (Estimated) to CSV", MemoryProfilerSettings.LastImportPath, "Graphics", "csv");
             if (string.IsNullOrEmpty(path))
                 return;
 
@@ -230,13 +328,14 @@ namespace Unity.MemoryProfiler.Editor
             }
 
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
-            EditorUtility.RevealInFinder(path);
+            if (reveal)
+                EditorUtility.RevealInFinder(path);
         }
 
-        public static void ExportUnityObjectsToCsv(CachedSnapshot snapshot)
+        public static void ExportUnityObjectsToCsv(CachedSnapshot snapshot, string path = null, bool reveal = true)
         {
             // Use the last import path for consistency with other exports
-            var path = EditorUtility.SaveFilePanel("Export Unity Objects to CSV", MemoryProfilerSettings.LastImportPath, "UnityObjects", "csv");
+            path ??= EditorUtility.SaveFilePanel("Export Unity Objects to CSV", MemoryProfilerSettings.LastImportPath, "UnityObjects", "csv");
             if (string.IsNullOrEmpty(path))
                 return;
 
@@ -290,7 +389,8 @@ namespace Unity.MemoryProfiler.Editor
             }
 
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
-            EditorUtility.RevealInFinder(path);
+            if (reveal)
+                EditorUtility.RevealInFinder(path);
         }
     }
 }
