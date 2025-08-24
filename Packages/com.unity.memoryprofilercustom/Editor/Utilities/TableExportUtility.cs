@@ -1,6 +1,8 @@
 using UnityEditor;
 using System.IO;
 using System.Text;
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 using UnityEditor;
@@ -11,6 +13,15 @@ namespace Unity.MemoryProfiler.Editor
 {
     internal static class TableExportUtility
     {
+        static float BytesToMegabytes(long bytes)
+        {
+            return bytes / (1024f * 1024f);
+        }
+        
+        static string FormatBytes(long bytes)
+        { 
+            return $"{BytesToMegabytes(bytes):F3} MB";
+        } 
 
         static bool ExportValidate()
         {
@@ -56,12 +67,13 @@ namespace Unity.MemoryProfiler.Editor
                 return;
 
             var sb = new StringBuilder();
-            sb.AppendLine("Type,Size, RefCount");
 
             // Use crawled managed objects from the current snapshot API
             var objects = snapshot.CrawledData.ManagedObjects;
             var typeNames = snapshot.TypeDescriptions.TypeDescriptionName;
 
+            // 1) Aggregate totals per managed type
+            var totals = new Dictionary<int, (long totalSize, int count)>();
             for (int i = 0; i < objects.Count; i++)
             {
                 var obj = objects[i];
@@ -69,15 +81,29 @@ namespace Unity.MemoryProfiler.Editor
                 if (obj.PtrObject == 0 || obj.ITypeDescription < 0)
                     continue;
 
-                var typeName = typeNames[obj.ITypeDescription] ?? string.Empty;
-                // CSV-safe quoting
-                var safeType = typeName.Replace("\"", "\"\"");
-                var size = obj.Size;
-                var numberOfReferences = obj.RefCount;
-                
-                // TODO: Add total allocated size per type (requires aggregation)
+                var typeIdx = obj.ITypeDescription;
+                var size = (long)obj.Size;
 
-                sb.AppendLine($"\"{safeType}\",{size},{numberOfReferences}");
+                if (totals.TryGetValue(typeIdx, out var t))
+                    totals[typeIdx] = (t.totalSize + size, t.count + 1);
+                else
+                    totals[typeIdx] = (size, 1);
+            }
+
+            // Section A: Per-Type Totals
+            sb.AppendLine("Managed Types Totals");
+            sb.AppendLine("Type,Count,TotalSize(Mb)");
+
+            foreach (var kv in totals.OrderByDescending(kv => kv.Value.totalSize))
+            {
+                var typeIdx = kv.Key;
+                var (totalSize, count) = kv.Value;
+
+                var typeName = (typeIdx >= 0 && typeIdx < typeNames.Length) ? (typeNames[typeIdx] ?? string.Empty) : string.Empty;
+                var safeType = typeName.Replace("\"", "\"\"");
+
+                // Print average as whole bytes to avoid decimals in CSV
+                sb.AppendLine($"\"{safeType}\",{count},{FormatBytes(totalSize)}");
             }
 
             File.WriteAllText(path, sb.ToString());
