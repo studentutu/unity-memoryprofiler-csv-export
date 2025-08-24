@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using UnityEngine;
+using UnityEngine.UIElements;
 using UnityEditor;
 using Unity.MemoryProfiler.Editor.UI;
 using Unity.MemoryProfiler.Editor;
@@ -68,7 +69,7 @@ namespace Unity.MemoryProfiler.Editor
 
             var sb = new StringBuilder();
 
-            // Use crawled managed objects from the current snapshot API
+            
             var objects = snapshot.CrawledData.ManagedObjects;
             var typeNames = snapshot.TypeDescriptions.TypeDescriptionName;
 
@@ -112,18 +113,82 @@ namespace Unity.MemoryProfiler.Editor
         
         public static void ExportGraphicsToCsv(CachedSnapshot snapshot)
         {
-            var path = EditorUtility.SaveFilePanel("Export Graphics (Estimated) to CSV", "", "Graphics", "csv");
+            // Use the last import path for consistency with other exports
+            var path = EditorUtility.SaveFilePanel("Export Graphics (Estimated) to CSV", MemoryProfilerSettings.LastImportPath, "Graphics", "csv");
             if (string.IsNullOrEmpty(path))
                 return;
 
+            // Build the same data model used by All Of Memory -> Graphics (Estimated)
+            var builder = new Unity.MemoryProfiler.Editor.UI.AllTrackedMemoryModelBuilder();
+            var args = new Unity.MemoryProfiler.Editor.UI.AllTrackedMemoryModelBuilder.BuildArgs(
+                searchFilter: null,
+                nameFilter: null,
+                pathFilter: null,
+                excludeAll: false,
+                breakdownNativeReserved: false,
+                disambiguateUnityObjects: false,
+                breakdownGfxResources: true,       // ensure we list individual graphics resources
+                selectionProcessor: null,
+                allocationRootNamesToSplitIntoSuballocations: null
+            );
+
+            var model = builder.Build(snapshot, args);
+
+            // Find the Graphics (Estimated) root in the tree
+            var graphicsRoot = model.RootNodes.FirstOrDefault(n => n.data.Name == Unity.MemoryProfiler.Editor.UI.AllTrackedMemoryModelBuilder.GraphicsGroupName);
+            if (graphicsRoot.Equals(default(UnityEngine.UIElements.TreeViewItemData<Unity.MemoryProfiler.Editor.UI.AllTrackedMemoryModel.ItemData>)))
+            {
+                // No graphics group present, export empty with header
+                var empty = new StringBuilder();
+                empty.AppendLine("NameOfObject,Type,Allocated(MB)");
+                File.WriteAllText(path, empty.ToString(), Encoding.UTF8);
+                EditorUtility.RevealInFinder(path);
+                return;
+            }
+
+            // Collect all leaves under the Graphics group, using the immediate child of Graphics as the "Type" (e.g., Texture2D, Mesh, Reserved, etc.)
+            var rows = new List<(string Name, string Type, long Bytes)>();
+
+            void CollectLeaves(UnityEngine.UIElements.TreeViewItemData<Unity.MemoryProfiler.Editor.UI.AllTrackedMemoryModel.ItemData> node, string currentType)
+            {
+                var children = node.children;
+                if (children == null || !children.Any())
+                {
+                    // Leaf item
+                    var name = node.data.Name ?? string.Empty;
+                    var sizeBytes = (long)node.data.Size.Committed;
+                    if (sizeBytes > 0)
+                        rows.Add((name, currentType ?? string.Empty, sizeBytes));
+                    return;
+                }
+
+                foreach (var child in children)
+                {
+                    // If we're directly under the Graphics root, treat this child as the "Type" group.
+                    var nextType = currentType;
+                    if (node.id == graphicsRoot.id)
+                        nextType = child.data.Name ?? string.Empty;
+
+                    CollectLeaves(child, nextType);
+                }
+            }
+
+            CollectLeaves(graphicsRoot, currentType: null);
+
+            // Order by allocated size descending
+            var ordered = rows.OrderByDescending(r => r.Bytes);
+
+            // Write CSV
             var sb = new StringBuilder();
             sb.AppendLine("NameOfObject,Type,Allocated(MB)");
 
-            // TODO: Fix export of graphics resources 
-            // make sure to order OrderByDescending by allocated size
-            // format bytes to MB before writing to csv
-            // Build the same data that drives  All of Memory table, then flatten it to actual objects.
-            
+            foreach (var row in ordered)
+            {
+                // CSV escape quotes
+                var safeName = (row.Name ?? string.Empty).Replace("\"", "\"\"");
+                var safeType = (row.Type ?? string.Empty).Replace("\"", "\"\"");
+                sb.AppendLine($"\"{safeName}\",\"{safeType}\",{FormatBytes(row.Bytes)}");
+            }
 
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
             EditorUtility.RevealInFinder(path);
