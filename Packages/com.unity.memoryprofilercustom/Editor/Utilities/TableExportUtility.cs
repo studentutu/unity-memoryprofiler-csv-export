@@ -50,15 +50,15 @@ namespace Unity.MemoryProfiler.Editor
         //         TableExportUtility.ExportGraphicsToCsv(window.m_SnapshotDataService.Base);
         // }
 
-        // [MenuItem("Window/Analysis/Memory Profiler/Export/Unity Objects to CSV", false, 102)]
-        // static void ExportUnityObjects()
-        // {
-        //      if (!ExportValidate())
-        //         return;
-        //     var window = EditorWindow.GetWindow<MemoryProfilerWindow>();
-        //     if (window.m_SnapshotDataService.Base != null)
-        //         TableExportUtility.ExportUnityObjectsToCsv(window.m_SnapshotDataService.Base);
-        // }
+        [MenuItem("Window/Analysis/Memory Profiler/Export/Unity Objects to CSV", false, 102)]
+        static void ExportUnityObjects()
+        {
+             if (!ExportValidate())
+                return;
+            var window = EditorWindow.GetWindow<MemoryProfilerWindow>();
+            if (window.m_SnapshotDataService.Base != null)
+                TableExportUtility.ExportUnityObjectsToCsv(window.m_SnapshotDataService.Base);
+        }
 
         public static void ExportAllManagedObjectsToCsv(CachedSnapshot snapshot)
         {
@@ -130,24 +130,26 @@ namespace Unity.MemoryProfiler.Editor
         //     File.WriteAllText(path, sb.ToString());
         // }
 
-        // public static void ExportUnityObjectsToCsv(CachedSnapshot snapshot)
-        // {
-        //     var path = EditorUtility.SaveFilePanel("Export Unity Objects to CSV", "", "UnityObjects", "csv");
-        //     if (string.IsNullOrEmpty(path))
-        //         return;
+        public static void ExportUnityObjectsToCsv(CachedSnapshot snapshot)
+        {
+            var path = EditorUtility.SaveFilePanel("Export Unity Objects to CSV", "", "UnityObjects", "csv");
+            if (string.IsNullOrEmpty(path))
+                return;
 
-        //     var sb = new StringBuilder();
-        //     sb.AppendLine("InstanceId,Name,Type,Size");
+            var sb = new StringBuilder();
+            sb.AppendLine("NameOfObject,Type,Size");
 
-        //     for (int i = 0; i < snapshot.NativeObjects.Count; ++i)
-        //     {
-        //         var id = snapshot.NativeObjects.InstanceId[i];
-        //         var name = snapshot.NativeObjects.Name[i];
-        //         var type = snapshot.NativeTypes.Name[snapshot.NativeObjects.TypeIndex[i]];
-        //         var size = snapshot.NativeObjects.Size[i];
-        //         sb.AppendLine($"{id},{name},{type},{size}");
-        //     }
-        //     File.WriteAllText(path, sb.ToString());
-        // }
+            // TODO: Fix this and make sure all unity objects and scriptable objects/addressables/ bundles  are included.
+            // OrderByDescending by total size before writing to csv
+            for (int i = 0; i < snapshot.NativeObjects.Count; ++i)
+            {
+                // var id = snapshot.NativeObjects.InstanceId[i];
+                // var name = snapshot.NativeObjects.Name[i];
+                // var type = snapshot.NativeTypes.Name[snapshot.NativeObjects.TypeIndex[i]];
+                // var size = snapshot.NativeObjects.Size[i];
+                // sb.AppendLine($"{name},{type},{size}");
+            }
+            File.WriteAllText(path, sb.ToString());
+        }
     }
 }
