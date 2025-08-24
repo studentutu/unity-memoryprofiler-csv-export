@@ -90,7 +90,7 @@ namespace Unity.MemoryProfiler.Editor
             {
                 // No managed data, export empty with header
                 var empty = new StringBuilder();
-                empty.AppendLine("Type,NameOfObject,Allocated(MB),Resident(MB)");
+                empty.AppendLine("Type,Count,Allocated(MB),Resident(MB)");
                 File.WriteAllText(path, empty.ToString(), Encoding.UTF8);
                 EditorUtility.RevealInFinder(path);
                 return;
@@ -101,33 +101,48 @@ namespace Unity.MemoryProfiler.Editor
                                      ?? default;
 
             var sb = new StringBuilder();
-            sb.AppendLine("Type,NameOfObject,Allocated(MB),Resident(MB)");
+            sb.AppendLine("Type,Count,Allocated(MB),Resident(MB)");
 
             if (!managedObjectsNode.Equals(default(UnityEngine.UIElements.TreeViewItemData<Unity.MemoryProfiler.Editor.UI.AllTrackedMemoryModel.ItemData>)))
             {
-                // Collect rows as (Type, Name, Committed, Resident)
-                var rows = new List<(string Type, string Name, long Committed, long Resident)>();
+                // Aggregate per managed type: Count, total Committed (Allocated) and total Resident
+                var aggregates = new Dictionary<string, (long committed, long resident, int count)>(System.StringComparer.Ordinal);
 
                 foreach (var typeNode in managedObjectsNode.children ?? Enumerable.Empty<UnityEngine.UIElements.TreeViewItemData<Unity.MemoryProfiler.Editor.UI.AllTrackedMemoryModel.ItemData>>())
                 {
                     var typeName = typeNode.data.Name ?? string.Empty;
 
+                    long typeCommitted = 0;
+                    long typeResident = 0;
+                    int typeCount = 0;
+
                     // Leaves should be individual managed objects
                     foreach (var objNode in typeNode.children ?? Enumerable.Empty<UnityEngine.UIElements.TreeViewItemData<Unity.MemoryProfiler.Editor.UI.AllTrackedMemoryModel.ItemData>>())
                     {
-                        var name = objNode.data.Name ?? string.Empty;
                         var committed = (long)objNode.data.Size.Committed;
                         var resident = (long)objNode.data.Size.Resident;
-                        rows.Add((typeName, name, committed, resident));
+                        typeCommitted += committed;
+                        typeResident += resident;
+                        typeCount++;
                     }
+
+                    if (typeCount == 0 && (typeNode.data.Size.Committed > 0 || typeNode.data.Size.Resident > 0))
+                    {
+                        // Fallback in case the model provides size only at the type node level
+                        typeCommitted += (long)typeNode.data.Size.Committed;
+                        typeResident += (long)typeNode.data.Size.Resident;
+                    }
+
+                    if (aggregates.TryGetValue(typeName, out var acc))
+                        aggregates[typeName] = (acc.committed + typeCommitted, acc.resident + typeResident, acc.count + typeCount);
+                    else
+                        aggregates[typeName] = (typeCommitted, typeResident, typeCount);
                 }
 
-                // Sort by allocated size (Committed) descending for readability
-                foreach (var row in rows.OrderByDescending(r => r.Committed))
+                foreach (var kvp in aggregates.OrderByDescending(k => k.Value.committed))
                 {
-                    var safeType = row.Type.Replace("\"", "\"\"");
-                    var safeName = row.Name.Replace("\"", "\"\"");
-                    sb.AppendLine($"\"{safeType}\",\"{safeName}\",{FormatBytes(row.Committed)},{FormatBytes(row.Resident)}");
+                    var safeType = (kvp.Key ?? string.Empty).Replace("\"", "\"\"");
+                    sb.AppendLine($"\"{safeType}\",{kvp.Value.count},{FormatBytes(kvp.Value.committed)},{FormatBytes(kvp.Value.resident)}");
                 }
             }
 
