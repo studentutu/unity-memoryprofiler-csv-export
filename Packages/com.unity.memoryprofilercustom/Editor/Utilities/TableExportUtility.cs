@@ -69,7 +69,6 @@ namespace Unity.MemoryProfiler.Editor
 
             var sb = new StringBuilder();
 
-            
             var objects = snapshot.CrawledData.ManagedObjects;
             var typeNames = snapshot.TypeDescriptions.TypeDescriptionName;
 
@@ -91,7 +90,11 @@ namespace Unity.MemoryProfiler.Editor
                     totals[typeIdx] = (size, 1);
             }
 
-            // Section A: Per-Type Totals
+            
+            // TODO: Fix to use build the same data model used by All Of Memory -> Managed
+            // Per-Type Totals
+            // OrderByDescending by total size
+            // format bytes to MB before writing to CSV
             sb.AppendLine("Managed Types Totals");
             sb.AppendLine("Type,Count,TotalSize(Mb)");
 
