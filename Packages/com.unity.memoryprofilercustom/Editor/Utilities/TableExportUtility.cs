@@ -132,24 +132,62 @@ namespace Unity.MemoryProfiler.Editor
 
         public static void ExportUnityObjectsToCsv(CachedSnapshot snapshot)
         {
-            var path = EditorUtility.SaveFilePanel("Export Unity Objects to CSV", "", "UnityObjects", "csv");
+            // Use the last import path for consistency with other exports
+            var path = EditorUtility.SaveFilePanel("Export Unity Objects to CSV", MemoryProfilerSettings.LastImportPath, "UnityObjects", "csv");
             if (string.IsNullOrEmpty(path))
                 return;
 
-            var sb = new StringBuilder();
-            sb.AppendLine("NameOfObject,Type,Size");
+            // Build the same data that drives the Unity Objects table, then flatten it to actual objects.
+            var builder = new Unity.MemoryProfiler.Editor.UI.UnityObjectsModelBuilder();
+            var args = new Unity.MemoryProfiler.Editor.UI.UnityObjectsModelBuilder.BuildArgs(
+                searchStringFilter: null,
+                unityObjectNameFilter: null,
+                unityObjectTypeNameFilter: null,
+                unityObjectInstanceIDFilter: null,
+                flattenHierarchy: true,               // export leaves (actual objects)
+                potentialDuplicatesFilter: false,     // keep all, not just duplicates
+                disambiguateByInstanceId: false,
+                selectionProcessor: null
+            );
 
-            // TODO: Fix this and make sure all unity objects and scriptable objects/addressables/ bundles  are included.
-            // OrderByDescending by total size before writing to csv
-            for (int i = 0; i < snapshot.NativeObjects.Count; ++i)
+            var model = builder.Build(snapshot, args);
+            var leaves = model.RootNodes; // already flattened to leaves
+
+            var sb = new StringBuilder();
+            // Keep original requested header, but format Size as MB. Add Allocated/Resident for clarity.
+            sb.AppendLine("NameOfObject,Type,Allocated(MB),Resident(MB)");
+
+            // Order by total allocated (Committed) size, desc
+            foreach (var node in leaves.OrderByDescending(n => n.data.TotalSize.Committed))
             {
-                // var id = snapshot.NativeObjects.InstanceId[i];
-                // var name = snapshot.NativeObjects.Name[i];
-                // var type = snapshot.NativeTypes.Name[snapshot.NativeObjects.TypeIndex[i]];
-                // var size = snapshot.NativeObjects.Size[i];
-                // sb.AppendLine($"{name},{type},{size}");
+                var data = node.data;
+
+                // Expect leaves to reference a NativeObject. Skip anything else defensively.
+                if (data.Source.Id != CachedSnapshot.SourceIndex.SourceId.NativeObject)
+                    continue;
+
+                var nativeIndex = data.Source.Index;
+                // Resolve type and name like the UI does
+                var typeIndex = snapshot.NativeObjects.NativeTypeArrayIndex[nativeIndex];
+                var typeName = snapshot.NativeTypes.TypeName[typeIndex] ?? string.Empty;
+
+                // Prefer item name from model (it can include disambiguation), fallback to snapshot name
+                var name = string.IsNullOrEmpty(data.Name)
+                    ? snapshot.NativeObjects.ObjectName[nativeIndex] ?? "unknown"
+                    : data.Name;
+
+                // CSV escape
+                var safeName = name.Replace("\"", "\"\"");
+                var safeType = typeName.Replace("\"", "\"\"");
+
+                var allocatedMb = FormatBytes((long)data.TotalSize.Committed);
+                var residentMb = FormatBytes((long)data.TotalSize.Resident);
+
+                sb.AppendLine($"\"{safeName}\",\"{safeType}\",{allocatedMb},{residentMb}");
             }
-            File.WriteAllText(path, sb.ToString());
+
+            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+            EditorUtility.RevealInFinder(path);
         }
     }
 }
