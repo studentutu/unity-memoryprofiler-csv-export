@@ -20,7 +20,7 @@ namespace Unity.MemoryProfiler.Editor
         internal SnapshotDataService SnapshotDataService => m_SnapshotDataService;
         internal MemoryProfilerViewController ProfilerViewController => m_ProfilerViewController;
 
-        [MenuItem("Window/Analysis/Show Memory Profiler")]
+        [MenuItem("Window/Analysis/Memory Profiler", false, 4)]
         static void ShowWindow()
         {
             var window = GetWindow<MemoryProfilerWindow>();
