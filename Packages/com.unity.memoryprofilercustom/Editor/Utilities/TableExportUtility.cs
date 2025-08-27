@@ -6,12 +6,20 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 using UnityEngine.UIElements;
-using UnityEditor;
 using Unity.MemoryProfiler.Editor.UI;
 using Unity.MemoryProfiler.Editor;
 
 namespace Unity.MemoryProfiler.Editor
 {
+    /// <summary>
+    /// 1. Copy to local packages full folder com.unity.memoryprofiler package (navigate to and copy from Library/PackageCache/com.unity.memoryprofiler to root project folder ./Packages)
+    /// 2. Place script TableExportUtility inside Editor folder of the local package com.unity.memoryprofiler 
+    /// 3. Change MemoryProfilerWindow.cs fields to be internal (m_SnapshotDataService, m_PlayerConnectionService, m_ProfilerViewController)
+    /// 4. Profit. 
+    /// How to use: 
+    ///     - Open Captured Snapshot in Memory profiler (Single Snapshot)
+    ///     - Use menu items inside editor "Window/Analysis/Memory Profiler Export/..." 
+    /// </summary>
     internal static class TableExportUtility
     {
         static float BytesToMegabytes(long bytes)
