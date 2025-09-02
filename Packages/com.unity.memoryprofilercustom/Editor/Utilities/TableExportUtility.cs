@@ -29,7 +29,7 @@ namespace Unity.MemoryProfiler.Editor
 
         static string FormatBytes(long bytes)
         {
-            return $"{BytesToMegabytes(bytes):F3} MB";
+            return $"{BytesToMegabytes(bytes):F3}";
         }
 
         static bool ExportValidate()
@@ -296,7 +296,7 @@ namespace Unity.MemoryProfiler.Editor
 
             void CollectLeaves(UnityEngine.UIElements.TreeViewItemData<Unity.MemoryProfiler.Editor.UI.AllTrackedMemoryModel.ItemData> node, string currentType)
             {
-                var children = node.children;
+                var children = node.children?.ToList();
                 if (children == null || !children.Any())
                 {
                     // Leaf item
